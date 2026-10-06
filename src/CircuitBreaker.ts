@@ -18,6 +18,7 @@ export class AgentCircuitBreaker {
   private state: CircuitState = "CLOSED";
   private failureCount: number = 0;
   private nextAttempt: number | null = null;
+  private trialInFlight: boolean = false;
   private readonly failureThreshold: number;
   private readonly resetTimeoutMs: number;
   private readonly onStateChange: StateChangeListener | undefined;
@@ -41,7 +42,13 @@ export class AgentCircuitBreaker {
   ): Promise<T> {
     const currentState = this.getState();
 
-    if (currentState === "OPEN") {
+    // While HALF_OPEN only one call, the trial, may reach the provider; the others are turned away as if OPEN.
+    const isTrial = currentState === "HALF_OPEN" && !this.trialInFlight;
+    if (isTrial) {
+      this.trialInFlight = true;
+    }
+
+    if (currentState === "OPEN" || (currentState === "HALF_OPEN" && !isTrial)) {
       if (fallbackAction) {
         return await fallbackAction();
       }
@@ -50,9 +57,15 @@ export class AgentCircuitBreaker {
 
     try {
       const result = await primaryAction();
+      if (isTrial) {
+        this.trialInFlight = false;
+      }
       this.onSuccess();
       return result;
     } catch (error) {
+      if (isTrial) {
+        this.trialInFlight = false;
+      }
       this.onFailure();
       if (fallbackAction) {
         return await fallbackAction();

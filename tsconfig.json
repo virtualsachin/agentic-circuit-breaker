@@ -38,6 +38,6 @@
     "moduleDetection": "force",
     "skipLibCheck": true,
   },
-  // The library and its tests. examples/ is not built: examples/cloudflare-worker.ts does not type-check yet.
-  "include": ["src", "test"]
+  // The library, its tests and the examples: `npm test` builds all three, so a broken example fails CI.
+  "include": ["src", "test", "examples"]
 }

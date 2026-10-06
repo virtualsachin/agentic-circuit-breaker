@@ -127,6 +127,67 @@ describe("AgentCircuitBreaker", () => {
     });
   });
 
+  describe("HALF_OPEN trial", () => {
+    async function halfOpen(options: ConstructorParameters<typeof AgentCircuitBreaker>[0] = {}): Promise<AgentCircuitBreaker> {
+      const breaker = new AgentCircuitBreaker({ failureThreshold: 1, resetTimeoutMs: 1000, ...options });
+      await failTimes(breaker, 1);
+      mock.timers.tick(1001);
+      assert.equal(breaker.getState(), "HALF_OPEN");
+      return breaker;
+    }
+
+    it("lets exactly one concurrent call through as the trial and sends the rest to the fallback", async () => {
+      const breaker = await halfOpen();
+      const primary = mock.fn(ok);
+      const results = await Promise.all(Array.from({ length: 5 }, () => breaker.execute(primary, fallback)));
+      assert.equal(primary.mock.callCount(), 1);
+      assert.deepEqual(results, ["primary", "fallback", "fallback", "fallback", "fallback"]);
+      assert.equal(breaker.getState(), "CLOSED");
+    });
+
+    it("rejects the other concurrent calls with CircuitOpenError when there is no fallback", async () => {
+      const breaker = await halfOpen();
+      const primary = mock.fn(ok);
+      const settled = await Promise.allSettled(Array.from({ length: 4 }, () => breaker.execute(primary)));
+      assert.equal(primary.mock.callCount(), 1);
+      assert.equal(settled[0]?.status, "fulfilled");
+      for (const outcome of settled.slice(1)) {
+        assert.equal(outcome.status, "rejected");
+        assert.ok(outcome.status === "rejected" && outcome.reason instanceof CircuitOpenError);
+      }
+    });
+
+    it("re-opens after a failed trial and lets one new trial through after the next wait", async () => {
+      const breaker = await halfOpen();
+      const failing = mock.fn(fail);
+      await Promise.allSettled(Array.from({ length: 3 }, () => breaker.execute(failing, fallback)));
+      assert.equal(failing.mock.callCount(), 1);
+      assert.equal(breaker.getState(), "OPEN");
+      mock.timers.tick(1001);
+      assert.equal(await breaker.execute(ok), "primary");
+      assert.equal(breaker.getState(), "CLOSED");
+    });
+
+    it("releases the trial when the primary throws before returning a promise", async () => {
+      const breaker = await halfOpen();
+      const throwsAtOnce = (): Promise<string> => {
+        throw new Error("sync failure");
+      };
+      await assert.rejects(breaker.execute(throwsAtOnce), /sync failure/);
+      assert.equal(breaker.getState(), "OPEN");
+      mock.timers.tick(1001);
+      assert.equal(await breaker.execute(ok), "primary");
+    });
+
+    it("does not report a state change for calls it turns away", async () => {
+      const changes: string[] = [];
+      const breaker = await halfOpen({ onStateChange: (from, to) => void changes.push(`${from}>${to}`) });
+      changes.length = 0;
+      await Promise.all(Array.from({ length: 5 }, () => breaker.execute(ok, fallback)));
+      assert.deepEqual(changes, ["HALF_OPEN>CLOSED"]);
+    });
+  });
+
   describe("options", () => {
     it("honours a custom failureThreshold", async () => {
       const breaker = new AgentCircuitBreaker({ failureThreshold: 5 });
