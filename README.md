@@ -30,7 +30,7 @@ stateDiagram-v2
 ### States:
 *   🟢 **CLOSED:** API calls route normally to the primary LLM.
 *   🔴 **OPEN:** The circuit is tripped. Primary LLM calls immediately fail (or route to fallback) without burning network time.
-*   🟡 **HALF_OPEN:** After a timeout, one test call is permitted to see if the primary LLM has recovered.
+*   🟡 **HALF_OPEN:** After a timeout, one test call is permitted to see if the primary LLM has recovered. Other calls that arrive while the test call is running use the fallback, or throw `CircuitOpenError` when there is none. The breaker has no call timeout of its own, so a test call that never settles keeps the others waiting: give your primary action a timeout.
 
 ## Installation
 
