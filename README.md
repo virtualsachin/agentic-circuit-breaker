@@ -60,6 +60,24 @@ async function processAgentTask(task) {
 }
 ```
 
+### Watching state changes
+
+Pass `onStateChange` to be told whenever the breaker moves between states, for logging or metrics:
+
+```typescript
+const llmBreaker = new AgentCircuitBreaker({
+  failureThreshold: 3,
+  resetTimeoutMs: 15000,
+  onStateChange: (from, to) => {
+    console.log(`circuit breaker: ${from} -> ${to}`);
+  },
+});
+```
+
+*   It is called once per real change, after the state has been updated: `CLOSED -> OPEN` when the failure threshold is reached, `OPEN -> HALF_OPEN`, and `HALF_OPEN -> CLOSED` or `HALF_OPEN -> OPEN` when the trial call finishes. It is not called for calls that change nothing, or for reading the state.
+*   `OPEN -> HALF_OPEN` is detected lazily, the first time `getState()` or `execute()` runs after the wait is over, so the callback fires then (the breaker has no timer of its own).
+*   The callback may return a promise. If it throws or rejects, the error is swallowed: a faulty listener never changes the result of the call it observes, and never causes an unhandled rejection. Handle your own errors inside it if you need to see them.
+
 ## Why Not `resilience4js` or `opossum`?
 
 While excellent libraries exist for microservices, `agentic-circuit-breaker` is hyper-optimized for the edge (e.g., Cloudflare Workers). It avoids Node.js specific modules (like `EventEmitter`), making it lightweight enough to run directly in edge environments where modern AI routers live.
