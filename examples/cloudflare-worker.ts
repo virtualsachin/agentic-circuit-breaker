@@ -6,12 +6,12 @@ const llmBreaker = new AgentCircuitBreaker({
   resetTimeoutMs: 15000 // Wait 15s before attempting recovery (HALF_OPEN)
 });
 
-async function primaryLLMCall(prompt: string) {
+async function primaryLLMCall(_prompt: string): Promise<string> {
   // Simulate an API that is currently rate limiting
   throw new Error("HTTP 429: Rate Limit Exceeded");
 }
 
-async function fallbackLLMCall(prompt: string) {
+async function fallbackLLMCall(prompt: string): Promise<string> {
   return `Fallback response to: ${prompt} (Using local Llama-3-8B)`;
 }
 
@@ -22,8 +22,8 @@ export async function processAgentTask(task: string) {
       () => fallbackLLMCall(task)
     );
     console.log("Result:", result);
-  } catch (error: any) {
-    console.error("Execution failed:", error.message);
+  } catch (error: unknown) {
+    console.error("Execution failed:", error instanceof Error ? error.message : String(error));
   }
 }
 
